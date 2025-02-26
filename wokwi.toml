@@ -1,0 +1,5 @@
+[wokwi]
+version = 1
+firmware = 'build/serial.uf2'
+elf = 'build/serial.elf'
+gdbServerPort=3333
