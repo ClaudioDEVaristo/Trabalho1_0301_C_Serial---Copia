@@ -10,13 +10,17 @@
 #include "hardware/uart.h"
 #include "hardware/pio.h"
 #include "hardware/irq.h"
+#include "hardware/pwm.h"
 
 //Variáveis globais
 uint static volatile ultimoTime = 0;
 volatile bool estado_led_verd = false;
 volatile bool estado_led_azul = false;
+volatile bool reiniciar_loop = false; 
 ssd1306_t ssd;
 bool estadoBotao;
+int resistencia;
+float r, g, b;
 
 //Define a pinagem do ssd1306 por i2c
 #define I2C_PORT i2c1
@@ -27,14 +31,24 @@ bool estadoBotao;
 //define do pino da matriz de leds
 #define OUT_PIN 7
 
-//define dos leds azul e verde
-#define led_verd 11
-#define led_azul 12
-#define led_vermelho 13
-
 //define dos botões
 #define bot_A 5
 #define bot_B 6
+
+// Definições PWM
+#define PWM_RED_PIN 13   // LED vermelho no pino 13
+#define PWM_GREEN_PIN 11 // LED verde no pino 11
+#define PWM_BLUE_PIN 12  // LED azul no pino 12
+#define PWM_WRAP 255     // Resolução de 8 bits (0-255)
+
+// Inicializa um canal PWM
+void pwm_init_pin(uint pin) {
+  gpio_set_function(pin, GPIO_FUNC_PWM);
+  uint slice = pwm_gpio_to_slice_num(pin);
+  pwm_config config = pwm_get_default_config();
+  pwm_config_set_wrap(&config, PWM_WRAP);
+  pwm_init(slice, &config, true);
+}
 
 //String para lógica das letras
 char str[10] = "ENTRADA: ";
@@ -47,14 +61,10 @@ void display();
 void setup(){
   stdio_init_all();   //Inicializa o monitor serial
 
-  gpio_init(led_verd);
-  gpio_set_dir(led_verd, GPIO_OUT);
-
-  gpio_init(led_azul);
-  gpio_set_dir(led_azul, GPIO_OUT);
-
-  gpio_init(led_vermelho);
-  gpio_set_dir(led_vermelho, GPIO_OUT);
+  // Inicializa PWM para os LEDs RGB
+  pwm_init_pin(PWM_RED_PIN);
+  pwm_init_pin(PWM_GREEN_PIN);
+  pwm_init_pin(PWM_BLUE_PIN);
 
   gpio_init(bot_A);
   gpio_set_dir(bot_A, GPIO_IN);
@@ -81,6 +91,31 @@ void setup(){
   ssd1306_send_data(&ssd);
 }
 
+void set_led_color(float r, float g, float b) {
+  // Converte valores de 0.0-1.0 para 0-255
+  uint16_t red = (uint16_t)(r * PWM_WRAP);
+  uint16_t green = (uint16_t)(g * PWM_WRAP);
+  uint16_t blue = (uint16_t)(b * PWM_WRAP);
+
+  // Define os níveis PWM
+  pwm_set_gpio_level(PWM_RED_PIN, red);
+  pwm_set_gpio_level(PWM_GREEN_PIN, green);
+  pwm_set_gpio_level(PWM_BLUE_PIN, blue);
+}
+
+ void cor_para_rgb_baseada_resistencia(int resistencia, float *r, float *g, float *b) {
+    // Exemplo: Resistência baixa = vermelho, média = verde, alta = azul
+    const int max_resistencia = 1000000; // 1MΩ
+
+    float valor = (float)resistencia / max_resistencia;
+    valor = valor > 1.0f ? 1.0f : valor; // Limita a 1.0
+
+    // Gradiente de cores (personalizável):
+    *r = 1.0f - valor;       // Vermelho diminui
+    *g = valor * 0.5f;       // Verde aumenta parcialmente
+    *b = valor;              // Azul aumenta
+}
+
 // Estrutura para armazenar o mapeamento das cores (nome -> dígito resistor)
 typedef struct {
   char *nome;
@@ -89,9 +124,9 @@ typedef struct {
 
 // Tabela com as cores típicas de resistores
 static CorResistor tabela[] = {
-  {"preto",   0}, {"marrom",  1}, {"vermelho", 2}, {"laranja", 3},
-  {"amarelo", 4}, {"verde",   5}, {"azul",     6}, {"violeta", 7},
-  {"cinza",   8}, {"branco",  9}
+  {"preto", 0}, {"marrom",  1}, {"vermelho", 2}, {"laranja", 3},
+  {"amarelo", 4}, {"verde", 5}, {"azul", 6}, {"violeta", 7},
+  {"cinza",  8}, {"branco",  9}
 };
 
 // Converte o nome da cor em um valor de dígito (0 a 9) para o cálculo do resistor
@@ -126,21 +161,26 @@ int calcular_resistencia(int d1, int d2, int d3) {
 
     if(!estadoBotao){
       if(botao == bot_A){
-        estado_led_verd = !estado_led_verd;   // Inverte o estado
         ssd1306_fill(&ssd, false);
         ssd1306_send_data(&ssd);
         ssd1306_draw_string(&ssd, "SIMULANDO...", 8, 30);
         ssd1306_send_data(&ssd); 
         printf("O botao A foi precionado!!\n");
-       
-      }
-      else if(botao == bot_B){
-        estado_led_azul = !estado_led_azul;   // Inverte o estado
+
+        // Obtém a cor RGB baseada na resistência (exemplo: mapeamento personalizado)
+         cor_para_rgb_baseada_resistencia(resistencia, &r, &g, &b);
+
+        // Define a cor do LED
+        set_led_color(r, g, b);
+
+      }else if(botao == bot_B){
+        reiniciar_loop = true;
         ssd1306_fill(&ssd, false);
         ssd1306_send_data(&ssd);
         ssd1306_draw_string(&ssd, "SAINDO...", 8, 30);
         ssd1306_send_data(&ssd); 
         printf("O botao B foi precionado!!\n");
+        set_led_color(0, 0, 0);
       
       }
     }
@@ -149,12 +189,10 @@ int calcular_resistencia(int d1, int d2, int d3) {
 
 char esperar_botao() {
   while (1) {  // Loop infinito
-      if (!gpio_get(bot_A)) {  // Verifica se o botão A foi pressionado
-        return 'A';
-      }
-      if (!gpio_get(bot_B)) {  // Verifica se o botão B foi pressionado
-        return 'B';
-      }
+    if (reiniciar_loop) { // Se B foi pressionado, retorna 'B'
+      reiniciar_loop = false;
+      return 'B';
+  }
       sleep_ms(10);  // Pequeno delay para evitar leituras erradas
   }
 }
@@ -207,6 +245,7 @@ void cor_para_rgb(const char *cor, float *r, float *g, float *b) {
   }
 }
 
+
 //Função principal
 int main()
 {
@@ -221,37 +260,58 @@ int main()
     
     while (true)
     { 
+      reiniciar_loop = false;
+
       char cor1[20], cor2[20], cor3[20];
-      if (stdio_usb_connected())
-      { 
+   
       ssd1306_draw_string(&ssd, "ESCOLHA A", 8, 10);
       ssd1306_draw_string(&ssd, "PRIMEIRA COR", 8, 30);
       ssd1306_send_data(&ssd);  
-      scanf("%s", cor1);
+      scanf(" %19s", cor1); 
       ssd1306_fill(&ssd, false);
       ssd1306_send_data(&ssd);
 
       ssd1306_draw_string(&ssd, "ESCOLHA A", 8, 10);
       ssd1306_draw_string(&ssd, "SEGUNDA COR", 8, 30);
       ssd1306_send_data(&ssd);  
-      scanf("%s", cor2);
+      scanf(" %19s", cor2); 
       ssd1306_fill(&ssd, false);
       ssd1306_send_data(&ssd);
 
       ssd1306_draw_string(&ssd, "ESCOLHA A", 8, 10);
       ssd1306_draw_string(&ssd, "TERCEIRA COR", 8, 30);
       ssd1306_send_data(&ssd);  
-      scanf("%s", cor3);
+      scanf(" %19s", cor3); 
       ssd1306_fill(&ssd, false);
       ssd1306_send_data(&ssd);
+
+      if (reiniciar_loop) {
+        continue; // Volta para o início do while(true)
+    }
 
       // Converte cada cor em dígito
       int d1 = cor_para_digito(cor1);
       int d2 = cor_para_digito(cor2);
       int d3 = cor_para_digito(cor3);
 
-      int resistencia = calcular_resistencia(d1, d2, d3);
+           
+       if (reiniciar_loop) { // Se B foi pressionado durante o cálculo, reinicie
+        continue;
+    }
 
+      if (d1 == -1 || d2 == -1 || d3 == -1) {
+        ssd1306_fill(&ssd, false);
+        ssd1306_draw_string(&ssd, "COR INVALIDA!", 8, 30);
+        ssd1306_send_data(&ssd);
+        sleep_ms(3000);
+        continue; // Reinicia o loop
+    }
+
+     resistencia = calcular_resistencia(d1, d2, d3);
+
+      if (resistencia == -1) {
+        ssd1306_draw_string(&ssd, "ERRO: COR INVALIDA", 8, 50);
+    }else{
       char buffer[16];
       sprintf(buffer, "%d OHMS", resistencia);
 
@@ -262,15 +322,16 @@ int main()
       sleep_ms(4000);
       ssd1306_fill(&ssd, false);
       ssd1306_send_data(&ssd);
-
+    }
       ssd1306_draw_string(&ssd, "GOSTARIA DE", 8, 10);
       ssd1306_draw_string(&ssd, "SIMULAR ", 8, 30);
       ssd1306_draw_string(&ssd, "A  SIM  B  NAO", 8, 50);
       ssd1306_send_data(&ssd);
 
       char escolha = esperar_botao();  // Aguarda a escolha do usuário
-      }
     }
     return 0;
   }
+
+ 
    

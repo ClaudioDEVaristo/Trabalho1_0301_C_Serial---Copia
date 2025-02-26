@@ -61,6 +61,7 @@ target_link_libraries(serial
         hardware_uart
         hardware_pio
         hardware_irq
+        hardware_pwm
         )
 
 pico_add_extra_outputs(serial)
