@@ -6,7 +6,6 @@
 #include "hardware/i2c.h"
 #include "inc/ssd1306.h"
 #include "inc/font.h"
-#include "inc/config_matriz.h"
 #include "hardware/uart.h"
 #include "hardware/pio.h"
 #include "hardware/irq.h"
@@ -28,9 +27,6 @@ float r, g, b;
 #define I2C_SCL 15
 #define endereco 0x3C
 
-//define do pino da matriz de leds
-#define OUT_PIN 7
-
 //define dos botões
 #define bot_A 5
 #define bot_B 6
@@ -49,9 +45,6 @@ void pwm_init_pin(uint pin) {
   pwm_config_set_wrap(&config, PWM_WRAP);
   pwm_init(slice, &config, true);
 }
-
-//String para lógica das letras
-char str[10] = "ENTRADA: ";
 
 //Inicia as funções
 void setup();
@@ -122,7 +115,7 @@ typedef struct {
   int   valor;
 } CorResistor;
 
-// Tabela com as cores típicas de resistores
+// Tabela com as cores de resistores
 static CorResistor tabela[] = {
   {"preto", 0}, {"marrom",  1}, {"vermelho", 2}, {"laranja", 3},
   {"amarelo", 4}, {"verde", 5}, {"azul", 6}, {"violeta", 7},
@@ -215,43 +208,11 @@ void display(){
       ssd1306_send_data(&ssd);
 }
 
-// Função que converte o nome da cor em valores RGB (float)
-
-void cor_para_rgb(const char *cor, float *r, float *g, float *b) {
-  if (strcmp(cor, "preto") == 0) {
-      *r = 0.0f; *g = 0.0f; *b = 0.0f;
-  } else if (strcmp(cor, "marrom") == 0) {
-      // Aproximação para marrom
-      *r = 0.30f; *g = 0.15f; *b = 0.0f;
-  } else if (strcmp(cor, "vermelho") == 0) {
-      *r = 1.0f; *g = 0.0f; *b = 0.0f;
-  } else if (strcmp(cor, "laranja") == 0) {
-      *r = 1.0f; *g = 0.5f; *b = 0.0f;
-  } else if (strcmp(cor, "amarelo") == 0) {
-      *r = 1.0f; *g = 1.0f; *b = 0.0f;
-  } else if (strcmp(cor, "verde") == 0) {
-      *r = 0.0f; *g = 1.0f; *b = 0.0f;
-  } else if (strcmp(cor, "azul") == 0) {
-      *r = 0.0f; *g = 0.0f; *b = 1.0f;
-  } else if (strcmp(cor, "violeta") == 0) {
-      *r = 0.54f; *g = 0.0f; *b = 1.0f;
-  } else if (strcmp(cor, "cinza") == 0) {
-      *r = 0.5f; *g = 0.5f; *b = 0.5f;
-  } else if (strcmp(cor, "branco") == 0) {
-      *r = 1.0f; *g = 1.0f; *b = 1.0f;
-  } else {
-      // Valor padrão para cor não reconhecida
-      *r = 0.0625f; *g = 0.0625f; *b = 0.0625f;
-  }
-}
-
-
 //Função principal
 int main()
 {
   stdio_init_all();
   setup(); // Chama a função que configura os pinos 
-  PIO pio = pio_config();
   display();
 
   //Chama as funções de callback
