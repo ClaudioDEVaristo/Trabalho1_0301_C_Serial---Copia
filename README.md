@@ -1,5 +1,5 @@
-Aqui está um arquivo `README.md` completo para o projeto:
-
+## LINKS:
+Vídeo para o YouTube: https://www.youtube.com/watch?v=SIKZD1qx5xk&ab_channel=AutomatizaIdeias
 ---
 
 # Resistor Calculator: Simulador de Resistores com Feedback Visual
